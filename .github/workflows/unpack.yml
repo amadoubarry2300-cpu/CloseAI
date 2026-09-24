@@ -1,0 +1,26 @@
+name: Installer CloseAI
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer le projet
+        run: |
+          unzip -o closeai-github-upload.zip
+          rm closeai-github-upload.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions@github.com"
+          git add -A
+          git commit -m "Installer CloseAI"
+          git push
