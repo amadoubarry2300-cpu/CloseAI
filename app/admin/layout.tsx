@@ -1,0 +1,2 @@
+import { redirect } from "next/navigation";import {createAuthenticatedServerClient} from "@/lib/supabase/auth-server";
+export default async function AdminLayout({children}:{children:React.ReactNode}){const db=await createAuthenticatedServerClient();if(!db)redirect("/dashboard");const {data:{user}}=await db.auth.getUser();if(!user)redirect("/login");const {data:profile}=await db.from("users").select("is_platform_admin").eq("id",user.id).single();if(!profile?.is_platform_admin)redirect("/dashboard");return children}

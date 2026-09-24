@@ -1,0 +1,18 @@
+import { fallbackResponse } from "./fallback";
+import type { AIResponse, ConversationInput } from "./types";
+
+const SYSTEM=`Tu es un copilote commercial éthique spécialisé dans les conversations WhatsApp.
+Règles absolues : n'invente jamais un prix, une promotion, une garantie, une preuve ou une caractéristique. N'utilise jamais de fausse urgence, de pression agressive ou de manipulation. Ne prétends pas être humain. Si l'information nécessaire manque, marque requiresHuman=true et propose un transfert humain. Une preuve de paiement en image n'est jamais définitive sans vérification externe.
+Réponds naturellement, avec empathie, sans jargon. Utilise uniquement la conversation, le produit et la base fournis.
+Retourne exclusivement un JSON valide : {"response":"...","analysis":{"intent":"purchase|information|comparison|support|unknown","interest":"cold|interested|hot|very_hot","objection":null|string,"sentiment":"positive|neutral|negative","urgency":"low|medium|high","product":null|string,"budget":null|string,"score":0-100,"nextAction":"...","requiresHuman":boolean,"reason":"..."}}.`;
+
+export async function generateCommercialResponse(input:ConversationInput):Promise<AIResponse>{
+ const key=process.env.OPENAI_API_KEY; if(!key)return fallbackResponse(input);
+ const base=process.env.OPENAI_BASE_URL||"https://api.openai.com/v1";const model=process.env.OPENAI_CHAT_MODEL||"gpt-4o-mini";
+ const context={tone:input.tone||"chaleureux et professionnel",length:input.length||"normale",language:input.language||"langue du prospect",product:input.product||null,knowledge:input.knowledge||[],conversation:input.messages.slice(-20)};
+ try{const r=await fetch(`${base}/chat/completions`,{method:"POST",headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model,temperature:.35,response_format:{type:"json_object"},messages:[{role:"system",content:SYSTEM},{role:"user",content:JSON.stringify(context)}]})});if(!r.ok)throw new Error(`AI ${r.status}`);const data=await r.json();const parsed=JSON.parse(data.choices?.[0]?.message?.content||"{}");if(!parsed.response||!parsed.analysis)throw new Error("Invalid AI response");parsed.analysis.score=Math.max(0,Math.min(100,Number(parsed.analysis.score)||0));return {response:parsed.response,analysis:parsed.analysis,provider:"openai-compatible",grounded:Boolean(input.product||input.knowledge?.length)};}catch(error){console.error("AI provider failed, using safe fallback",error);return fallbackResponse(input)}
+}
+
+export async function transcribeAudio(bytes:ArrayBuffer,mime="audio/ogg"){const key=process.env.OPENAI_API_KEY;if(!key)throw new Error("OPENAI_API_KEY is required for transcription");const form=new FormData();form.append("model",process.env.OPENAI_TRANSCRIPTION_MODEL||"whisper-1");form.append("file",new Blob([bytes],{type:mime}),"voice.ogg");const r=await fetch(`${process.env.OPENAI_BASE_URL||"https://api.openai.com/v1"}/audio/transcriptions`,{method:"POST",headers:{Authorization:`Bearer ${key}`},body:form});if(!r.ok)throw new Error(`Transcription ${r.status}`);const data=await r.json();return String(data.text||"")}
+
+export async function synthesizeSpeech(text:string):Promise<ArrayBuffer>{const key=process.env.OPENAI_API_KEY;if(!key)throw new Error("OPENAI_API_KEY is required for speech generation");const r=await fetch(`${process.env.OPENAI_BASE_URL||"https://api.openai.com/v1"}/audio/speech`,{method:"POST",headers:{Authorization:`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:process.env.OPENAI_TTS_MODEL||"tts-1",voice:process.env.OPENAI_TTS_VOICE||"alloy",input:text,response_format:"opus",speed:Number(process.env.OPENAI_TTS_SPEED||"1")})});if(!r.ok)throw new Error(`TTS ${r.status}`);return r.arrayBuffer()}

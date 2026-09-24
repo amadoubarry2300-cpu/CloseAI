@@ -1,0 +1,22 @@
+# Dependencies and generated files
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+
+# Local secrets — never send these to GitHub
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs and editor files
+*.log
+.DS_Store
+.vscode/
+.idea/
+
+# Vercel local metadata
+.vercel/

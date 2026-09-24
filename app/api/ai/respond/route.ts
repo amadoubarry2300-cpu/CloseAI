@@ -1,0 +1,5 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { generateCommercialResponse } from "@/lib/ai/orchestrator";
+const schema=z.object({contact:z.string().optional(),length:z.enum(["courte","normale","détaillée"]).optional(),messages:z.array(z.object({role:z.string(),content:z.string().max(5000)})).min(1).max(50),product:z.object({name:z.string(),price:z.string().optional(),description:z.string().optional(),benefits:z.array(z.string()).optional(),paymentLink:z.string().optional()}).optional(),knowledge:z.array(z.string()).max(20).optional(),tone:z.string().optional(),language:z.string().optional()});
+export async function POST(req:NextRequest){try{const body=schema.parse(await req.json());const result=await generateCommercialResponse(body);return NextResponse.json(result)}catch(e){if(e instanceof z.ZodError)return NextResponse.json({error:"Requête invalide",details:e.flatten()},{status:400});console.error(e);return NextResponse.json({error:"Impossible de générer la réponse"},{status:500})}}

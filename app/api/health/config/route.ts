@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+export const dynamic="force-dynamic";
+export async function GET(){const c={supabaseConfigured:Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL&&(process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY)),aiConfigured:Boolean(process.env.OPENAI_API_KEY),metaPhone:Boolean(process.env.META_WHATSAPP_PHONE_NUMBER_ID),metaBusiness:Boolean(process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID),metaToken:Boolean(process.env.META_WHATSAPP_ACCESS_TOKEN),metaVerify:Boolean(process.env.META_WHATSAPP_VERIFY_TOKEN)};return NextResponse.json({...c,metaConfigured:c.metaPhone&&c.metaToken&&c.metaVerify,stripeConfigured:Boolean(process.env.STRIPE_SECRET_KEY)})}
