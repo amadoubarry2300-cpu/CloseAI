@@ -66,6 +66,7 @@ async function generateWithOpenAICompatible(key: string, base: string, model: st
   const response = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(20_000),
     body: JSON.stringify({
       model,
       temperature: 0.25,
@@ -80,10 +81,7 @@ async function generateWithOpenAICompatible(key: string, base: string, model: st
 }
 
 export async function generateCommercialResponse(input: ConversationInput): Promise<AIResponse> {
-  const key = process.env.OPENAI_API_KEY?.trim().replace(/^['"]|['"]$/g, "");
-  if (!key) return fallbackResponse(input);
-  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").trim().replace(/^['"]|['"]$/g, "");
-  const model = (process.env.OPENAI_CHAT_MODEL || (key.startsWith("AIza") ? "gemini-2.5-flash" : "gpt-4o-mini")).trim().replace(/^['"]|['"]$/g, "");
+  const clean = (value?: string) => value?.trim().replace(/^['"]|['"]$/g, "");
   const context = {
     tone: input.tone || "chaleureux et professionnel",
     length: input.length || "normale",
@@ -92,6 +90,27 @@ export async function generateCommercialResponse(input: ConversationInput): Prom
     knowledge: input.knowledge || [],
     conversation: input.messages.slice(-20),
   };
+
+  const groqKey = clean(process.env.GROQ_API_KEY);
+  if (groqKey) {
+    try {
+      return await generateWithOpenAICompatible(
+        groqKey,
+        "https://api.groq.com/openai/v1",
+        clean(process.env.GROQ_CHAT_MODEL) || "openai/gpt-oss-20b",
+        context,
+        input,
+        "groq",
+      );
+    } catch (error) {
+      console.error("Groq chat failed, trying the secondary provider", error);
+    }
+  }
+
+  const key = clean(process.env.OPENAI_API_KEY);
+  if (!key) return fallbackResponse(input);
+  const base = clean(process.env.OPENAI_BASE_URL) || "https://api.openai.com/v1";
+  const model = clean(process.env.OPENAI_CHAT_MODEL) || (key.startsWith("AIza") ? "gemini-2.5-flash" : "gpt-4o-mini");
   try {
     if (base.includes("generativelanguage.googleapis.com") || key.startsWith("AIza")) return await generateWithGemini(key, model, context, input);
     return await generateWithOpenAICompatible(key, base, model, context, input);
