@@ -6,6 +6,16 @@ Règles absolues : n'invente jamais un prix, une promotion, une garantie, une pr
 Réponds naturellement, avec empathie, sans jargon. Utilise uniquement la conversation, le produit et la base fournis.
 Retourne exclusivement un JSON valide : {"response":"...","analysis":{"intent":"purchase|information|comparison|support|unknown","interest":"cold|interested|hot|very_hot","objection":null|string,"sentiment":"positive|neutral|negative","urgency":"low|medium|high","product":null|string,"budget":null|string,"score":0-100,"nextAction":"...","requiresHuman":boolean,"reason":"..."}}.`;
 
+function parseJsonOutput(raw: string) {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  try { return JSON.parse(cleaned); } catch {
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
+    throw new Error("No valid JSON object in AI output");
+  }
+}
+
 function normalizeResult(parsed: any, input: ConversationInput, provider: string): AIResponse {
   if (!parsed?.response || !parsed?.analysis) throw new Error("Invalid AI response");
   parsed.analysis.score = Math.max(0, Math.min(100, Number(parsed.analysis.score) || 0));
@@ -31,7 +41,7 @@ async function generateWithGemini(key: string, configuredModel: string, context:
         body: JSON.stringify({
           system_instruction: { parts: [{ text: SYSTEM }] },
           contents: [{ role: "user", parts: [{ text: JSON.stringify(context) }] }],
-          generationConfig: { temperature: 0.35, responseMimeType: "application/json", maxOutputTokens: 1600 },
+          generationConfig: { temperature: 0.25, responseMimeType: "application/json", maxOutputTokens: 3000 },
         }),
       });
       if (!response.ok) {
@@ -39,8 +49,12 @@ async function generateWithGemini(key: string, configuredModel: string, context:
         continue;
       }
       const data = await response.json();
-      const raw = (data.candidates?.[0]?.content?.parts || []).map((part: any) => part.text || "").join("");
-      return normalizeResult(JSON.parse(raw || "{}"), input, `google-gemini:${modelId}`);
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      // Thinking-capable Gemini models can return hidden thought parts before the
+      // final JSON. Only parse visible answer parts and prefer the last one.
+      const visibleTexts = parts.filter((part: any) => !part.thought && typeof part.text === "string").map((part: any) => part.text);
+      const raw = visibleTexts.at(-1) || visibleTexts.join("") || "";
+      return normalizeResult(parseJsonOutput(raw), input, `google-gemini:${modelId}`);
     } catch (error) {
       failures.push(`${modelId}:${error instanceof Error ? error.message.slice(0, 80) : "error"}`);
     }
@@ -61,7 +75,7 @@ async function generateWithOpenAICompatible(key: string, base: string, model: st
   });
   if (!response.ok) throw new Error(`AI ${response.status}: ${(await response.text()).slice(0, 300)}`);
   const data = await response.json();
-  return normalizeResult(JSON.parse(data.choices?.[0]?.message?.content || "{}"), input, "openai-compatible");
+  return normalizeResult(parseJsonOutput(data.choices?.[0]?.message?.content || ""), input, "openai-compatible");
 }
 
 export async function generateCommercialResponse(input: ConversationInput): Promise<AIResponse> {
