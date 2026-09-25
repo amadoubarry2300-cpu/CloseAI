@@ -62,20 +62,21 @@ async function generateWithGemini(key: string, configuredModel: string, context:
   throw new Error(`Gemini models unavailable (${failures.join(", ")})`);
 }
 
-async function generateWithOpenAICompatible(key: string, base: string, model: string, context: unknown, input: ConversationInput) {
+async function generateWithOpenAICompatible(key: string, base: string, model: string, context: unknown, input: ConversationInput, provider = "openai-compatible") {
   const response = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
-      temperature: 0.35,
+      temperature: 0.25,
+      max_tokens: 900,
       response_format: { type: "json_object" },
       messages: [{ role: "system", content: SYSTEM }, { role: "user", content: JSON.stringify(context) }],
     }),
   });
-  if (!response.ok) throw new Error(`AI ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  if (!response.ok) throw new Error(`${provider} AI ${response.status}: ${(await response.text()).slice(0, 300)}`);
   const data = await response.json();
-  return normalizeResult(parseJsonOutput(data.choices?.[0]?.message?.content || ""), input, "openai-compatible");
+  return normalizeResult(parseJsonOutput(data.choices?.[0]?.message?.content || ""), input, provider);
 }
 
 export async function generateCommercialResponse(input: ConversationInput): Promise<AIResponse> {
@@ -114,7 +115,31 @@ function audioFormat(mime: string) {
 
 export async function transcribeAudio(bytes: ArrayBuffer, mime = "audio/ogg") {
   const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new Error("OPENAI_API_KEY is required for transcription");
+  const groqKey = process.env.GROQ_API_KEY?.trim();
+
+  if (groqKey) {
+    try {
+      const form = new FormData();
+      form.append("model", process.env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo");
+      form.append("response_format", "json");
+      form.append("temperature", "0");
+      form.append("file", new Blob([bytes], { type: mime }), `voice.${audioFormat(mime)}`);
+      const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${groqKey}` },
+        body: form,
+      });
+      if (!response.ok) throw new Error(`Groq transcription ${response.status}: ${(await response.text()).slice(0, 240)}`);
+      const data = await response.json();
+      const transcript = String(data.text || "").trim();
+      if (!transcript) throw new Error("Groq returned an empty transcription");
+      return transcript;
+    } catch (error) {
+      console.error("Groq transcription failed, trying the secondary provider", error);
+    }
+  }
+
+  if (!key) throw new Error("GROQ_API_KEY or OPENAI_API_KEY is required for transcription");
   const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const encoded = Buffer.from(bytes).toString("base64");
 
@@ -167,8 +192,28 @@ export async function transcribeAudio(bytes: ArrayBuffer, mime = "audio/ogg") {
 }
 
 export async function synthesizeSpeech(text: string): Promise<{ bytes: ArrayBuffer; mime: string }> {
+  const fishKey = process.env.FISH_AUDIO_API_KEY?.trim();
+  if (fishKey) {
+    try {
+      const response = await fetch("https://api.fish.audio/compat/api/v1/audio/speech", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${fishKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: process.env.FISH_AUDIO_TTS_MODEL || "fish-audio/s2.1-pro-free",
+          input: text,
+          voice: process.env.FISH_AUDIO_VOICE || "",
+          response_format: "mp3",
+        }),
+      });
+      if (!response.ok) throw new Error(`Fish Audio TTS ${response.status}: ${(await response.text()).slice(0, 240)}`);
+      return { bytes: await response.arrayBuffer(), mime: "audio/mpeg" };
+    } catch (error) {
+      console.error("Fish Audio TTS failed, trying the secondary provider", error);
+    }
+  }
+
   const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new Error("OPENAI_API_KEY is required for speech generation");
+  if (!key) throw new Error("FISH_AUDIO_API_KEY or OPENAI_API_KEY is required for speech generation");
   const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   if (base.includes("generativelanguage.googleapis.com")) throw new Error("La sortie vocale Gemini nécessite la conversion PCM vers OGG.");
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateCommercialResponse, synthesizeSpeech, transcribeAudio } from "@/lib/ai/orchestrator";
@@ -17,8 +17,7 @@ export async function POST(req:NextRequest){
  const jobs:Promise<void>[]=[];const fields=new Set<string>();
  for(const entry of body.entry||[])for(const change of entry.changes||[]){fields.add(String(change.field||"unknown"));const value=change.value||{};const phoneId=value.metadata?.phone_number_id;const profileName=value.contacts?.[0]?.profile?.name;for(const msg of value.messages||[])if(phoneId)jobs.push(handleMessage(phoneId,msg,profileName));}
  console.info("WhatsApp webhook accepted",{fields:[...fields],messageCount:jobs.length});
- const results=await Promise.allSettled(jobs);const failures=results.filter(result=>result.status==="rejected").length;
- if(failures)console.error("WhatsApp webhook jobs failed",{failures,total:results.length});
+ if(jobs.length)after(async()=>{const results=await Promise.allSettled(jobs);const failures=results.filter(result=>result.status==="rejected").length;if(failures)console.error("WhatsApp webhook jobs failed",{failures,total:results.length})});
  return NextResponse.json({received:true});
 }
 

@@ -71,10 +71,14 @@ export async function GET() {
       automaticMode: process.env.WHATSAPP_DEFAULT_MODE === "automatic",
       audioModels: {
         transcriptionCorrect:
+          Boolean(process.env.GROQ_API_KEY) ||
           process.env.OPENAI_TRANSCRIPTION_MODEL ===
-          "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
         speechCorrect:
+          Boolean(process.env.FISH_AUDIO_API_KEY) ||
           process.env.OPENAI_TTS_MODEL === "fish-audio/s2.1-pro-free:free",
+        groqConfigured: Boolean(process.env.GROQ_API_KEY),
+        fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY),
       },
       meta: {
         graphVersion: version,
