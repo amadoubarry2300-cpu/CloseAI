@@ -231,13 +231,15 @@ export async function synthesizeSpeech(text: string): Promise<{ bytes: ArrayBuff
           top_p: 0.7,
           prosody: { speed, volume: 0, normalize_loudness: true },
           normalize: true,
-          format: "mp3",
+          format: "opus",
+          sample_rate: 48000,
+          opus_bitrate: 32000,
           latency: "normal",
           repetition_penalty: 1.2,
         }),
       });
       if (!response.ok) throw new Error(`Fish Audio TTS ${response.status}: ${(await response.text()).slice(0, 240)}`);
-      return { bytes: await response.arrayBuffer(), mime: "audio/mpeg" };
+      return { bytes: await response.arrayBuffer(), mime: "audio/ogg; codecs=opus" };
     } catch (error) {
       console.error("Fish Audio TTS failed, trying the secondary provider", error);
     }
