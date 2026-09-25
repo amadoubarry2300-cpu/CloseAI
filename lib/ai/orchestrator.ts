@@ -100,43 +100,93 @@ export async function generateCommercialResponse(input: ConversationInput): Prom
   }
 }
 
+function audioFormat(mime: string) {
+  const value = mime.toLowerCase();
+  if (value.includes("webm")) return "webm";
+  if (value.includes("mpeg") || value.includes("mp3")) return "mp3";
+  if (value.includes("mp4")) return "mp4";
+  if (value.includes("m4a")) return "m4a";
+  if (value.includes("wav")) return "wav";
+  if (value.includes("flac")) return "flac";
+  if (value.includes("aac")) return "aac";
+  return "ogg";
+}
+
 export async function transcribeAudio(bytes: ArrayBuffer, mime = "audio/ogg") {
-  const key = process.env.OPENAI_API_KEY;
+  const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) throw new Error("OPENAI_API_KEY is required for transcription");
-  const base = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  const encoded = Buffer.from(bytes).toString("base64");
+
   if (base.includes("generativelanguage.googleapis.com")) {
     const model = (process.env.OPENAI_CHAT_MODEL || "gemini-3.8-flash").replace(/^models\//, "");
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: "Transcris fidèlement ce message vocal. Retourne uniquement la transcription, sans commentaire." }, { inline_data: { mime_type: mime, data: Buffer.from(bytes).toString("base64") } }] }],
+        contents: [{ role: "user", parts: [{ text: "Transcris fidèlement ce message vocal. Retourne uniquement la transcription, sans commentaire." }, { inline_data: { mime_type: mime, data: encoded } }] }],
         generationConfig: { temperature: 0.1 },
       }),
     });
     if (!response.ok) throw new Error(`Gemini transcription ${response.status}`);
     const data = await response.json();
-    return String(data.candidates?.[0]?.content?.parts?.[0]?.text || "");
+    return String(data.candidates?.[0]?.content?.parts?.find((part: any) => part.text)?.text || "").trim();
   }
+
+  // OpenRouter's free multimodal models can understand WhatsApp OGG/Opus audio
+  // through Chat Completions, avoiding a second paid transcription provider.
+  if (base.includes("openrouter.ai")) {
+    const model = process.env.OPENAI_TRANSCRIPTION_MODEL || "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
+    const response = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://close-ai-jade.vercel.app", "X-OpenRouter-Title": "CloseAI" },
+      body: JSON.stringify({
+        model,
+        temperature: 0,
+        messages: [{ role: "user", content: [
+          { type: "text", text: "Transcris fidèlement ce message vocal dans sa langue originale. Retourne uniquement les paroles, sans explication." },
+          { type: "input_audio", input_audio: { data: encoded, format: audioFormat(mime) } },
+        ] }],
+      }),
+    });
+    if (!response.ok) throw new Error(`OpenRouter audio transcription ${response.status}: ${(await response.text()).slice(0, 240)}`);
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content;
+    const transcript = typeof content === "string" ? content : Array.isArray(content) ? content.map((part: any) => part.text || "").join(" ") : "";
+    if (!transcript.trim()) throw new Error("OpenRouter returned an empty transcription");
+    return transcript.trim();
+  }
+
   const form = new FormData();
   form.append("model", process.env.OPENAI_TRANSCRIPTION_MODEL || "whisper-1");
-  form.append("file", new Blob([bytes], { type: mime }), "voice.ogg");
-  const response = await fetch(`${base.replace(/\/$/, "")}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
+  form.append("file", new Blob([bytes], { type: mime }), `voice.${audioFormat(mime)}`);
+  const response = await fetch(`${base}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: form });
   if (!response.ok) throw new Error(`Transcription ${response.status}`);
   const data = await response.json();
-  return String(data.text || "");
+  return String(data.text || "").trim();
 }
 
-export async function synthesizeSpeech(text: string): Promise<ArrayBuffer> {
-  const key = process.env.OPENAI_API_KEY;
+export async function synthesizeSpeech(text: string): Promise<{ bytes: ArrayBuffer; mime: string }> {
+  const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) throw new Error("OPENAI_API_KEY is required for speech generation");
-  const base = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  if (base.includes("generativelanguage.googleapis.com")) throw new Error("La sortie vocale Gemini nécessite la conversion PCM vers OGG, à activer lors de la connexion WhatsApp.");
-  const response = await fetch(`${base.replace(/\/$/, "")}/audio/speech`, {
+  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  if (base.includes("generativelanguage.googleapis.com")) throw new Error("La sortie vocale Gemini nécessite la conversion PCM vers OGG.");
+
+  const isOpenRouter = base.includes("openrouter.ai");
+  const model = process.env.OPENAI_TTS_MODEL || (isOpenRouter ? "fish-audio/s2.1-pro-free:free" : "tts-1");
+  const responseFormat = isOpenRouter ? "mp3" : "opus";
+  const body: Record<string, unknown> = { model, input: text, response_format: responseFormat };
+  // Fish Audio provides a multilingual default voice. Other OpenAI-compatible
+  // models generally require an explicit voice.
+  if (!model.startsWith("fish-audio/")) {
+    body.voice = process.env.OPENAI_TTS_VOICE || "alloy";
+    body.speed = Number(process.env.OPENAI_TTS_SPEED || "1");
+  }
+  const response = await fetch(`${base}/audio/speech`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: process.env.OPENAI_TTS_MODEL || "tts-1", voice: process.env.OPENAI_TTS_VOICE || "alloy", input: text, response_format: "opus", speed: Number(process.env.OPENAI_TTS_SPEED || "1") }),
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://close-ai-jade.vercel.app", "X-OpenRouter-Title": "CloseAI" },
+    body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`TTS ${response.status}`);
-  return response.arrayBuffer();
+  if (!response.ok) throw new Error(`TTS ${response.status}: ${(await response.text()).slice(0, 240)}`);
+  return { bytes: await response.arrayBuffer(), mime: responseFormat === "mp3" ? "audio/mpeg" : "audio/ogg" };
 }
