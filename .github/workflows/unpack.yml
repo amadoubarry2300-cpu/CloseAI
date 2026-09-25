@@ -15,12 +15,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Installer le projet
+      - name: Installer la dernière mise à jour
         run: |
-          unzip -o closeai-github-upload.zip
-          rm closeai-github-upload.zip
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "closeai-github-upload*.zip" | sort | tail -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Aucune mise à jour trouvée"
+            exit 0
+          fi
+
+          echo "Installation de $ZIP_FILE"
+          unzip -o "$ZIP_FILE"
+          rm -f closeai-github-upload*.zip
+
+      - name: Enregistrer les changements
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions@github.com"
           git add -A
-          git commit -m "Installer CloseAI"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "Aucun changement"
+          else
+            git commit -m "Installer la mise à jour CloseAI"
+            git push
+          fi
