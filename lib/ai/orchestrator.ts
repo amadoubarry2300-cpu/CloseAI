@@ -3,7 +3,7 @@ import type { AIResponse, ConversationInput } from "./types";
 
 const SYSTEM = `Tu es un copilote commercial éthique spécialisé dans les conversations WhatsApp.
 Règles absolues : n'invente jamais un prix, une promotion, une garantie, une preuve ou une caractéristique. N'utilise jamais de fausse urgence, de pression agressive ou de manipulation. Ne prétends pas être humain. Si l'information nécessaire manque, marque requiresHuman=true et propose un transfert humain. Une preuve de paiement en image n'est jamais définitive sans vérification externe.
-Réponds naturellement, avec empathie, sans jargon. Utilise uniquement la conversation, le produit et la base fournis.
+Réponds naturellement, avec empathie, sans jargon. Réponds strictement dans la langue du dernier message du prospect, sauf s'il demande explicitement une traduction. Utilise uniquement la conversation, le produit et la base fournis.
 Retourne exclusivement un JSON valide : {"response":"...","analysis":{"intent":"purchase|information|comparison|support|unknown","interest":"cold|interested|hot|very_hot","objection":null|string,"sentiment":"positive|neutral|negative","urgency":"low|medium|high","product":null|string,"budget":null|string,"score":0-100,"nextAction":"...","requiresHuman":boolean,"reason":"..."}}.`;
 
 function parseJsonOutput(raw: string) {
@@ -214,14 +214,26 @@ export async function synthesizeSpeech(text: string): Promise<{ bytes: ArrayBuff
   const fishKey = process.env.FISH_AUDIO_API_KEY?.trim();
   if (fishKey) {
     try {
-      const response = await fetch("https://api.fish.audio/compat/api/v1/audio/speech", {
+      const configuredSpeed = Number(process.env.FISH_AUDIO_SPEED || "0.85");
+      const speed = Number.isFinite(configuredSpeed) ? Math.max(0.5, Math.min(2, configuredSpeed)) : 0.85;
+      const referenceId = process.env.FISH_AUDIO_VOICE?.trim();
+      const response = await fetch("https://api.fish.audio/v1/tts", {
         method: "POST",
-        headers: { Authorization: `Bearer ${fishKey}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${fishKey}`,
+          "Content-Type": "application/json",
+          model: process.env.FISH_AUDIO_TTS_MODEL || "s2.1-pro-free",
+        },
         body: JSON.stringify({
-          model: process.env.FISH_AUDIO_TTS_MODEL || "fish-audio/s2.1-pro-free",
-          input: text,
-          voice: process.env.FISH_AUDIO_VOICE || "",
-          response_format: "mp3",
+          text,
+          ...(referenceId ? { reference_id: referenceId } : {}),
+          temperature: 0.65,
+          top_p: 0.7,
+          prosody: { speed, volume: 0, normalize_loudness: true },
+          normalize: true,
+          format: "mp3",
+          latency: "normal",
+          repetition_penalty: 1.2,
         }),
       });
       if (!response.ok) throw new Error(`Fish Audio TTS ${response.status}: ${(await response.text()).slice(0, 240)}`);
