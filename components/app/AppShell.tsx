@@ -251,9 +251,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 className={`mode-switch ${automatic ? "auto" : ""}`}
                 onClick={toggleMode}
+                disabled={savingMode}
+                aria-pressed={automatic}
                 title={savingMode ? "Enregistrement…" : "Changer le mode de l'assistant"}
               >
-                <span>{automatic ? "Mode automatique" : "Mode Copilote"}</span>
+                <span>{savingMode ? "Enregistrement…" : automatic ? "Mode automatique" : "Mode Copilote"}</span>
                 <i className="switch" style={{ justifyContent: automatic ? "flex-end" : "flex-start" }} />
               </button>
             )}
