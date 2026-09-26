@@ -207,7 +207,7 @@ async function resourceConversations(
 
   const listRes = await db
     .from("conversations")
-    .select("id,status,intent,interest_level,objection,sentiment,urgency,lead_score,next_action,human_takeover_at,updated_at,contacts(id,name,phone,country)")
+    .select("id,status,intent,interest_level,objection,sentiment,urgency,lead_score,next_action,human_takeover_at,updated_at,contacts(id,name,phone,country,product_id,potential_value,products(name))")
     .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false })
     .limit(50);
