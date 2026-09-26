@@ -241,7 +241,7 @@ export async function synthesizeSpeech(text: string): Promise<{ bytes: ArrayBuff
       if (!response.ok) throw new Error(`Fish Audio TTS ${response.status}: ${(await response.text()).slice(0, 240)}`);
       return { bytes: await response.arrayBuffer(), mime: "audio/ogg; codecs=opus" };
     } catch (error) {
-      console.error("Fish Audio TTS failed, trying the secondary provider", error);
+      console.error("Fish Audio TTS failed; voice response will fall back to text", error);
     }
   }
 
@@ -251,20 +251,19 @@ export async function synthesizeSpeech(text: string): Promise<{ bytes: ArrayBuff
   if (base.includes("generativelanguage.googleapis.com")) throw new Error("La sortie vocale Gemini nécessite la conversion PCM vers OGG.");
 
   const isOpenRouter = base.includes("openrouter.ai");
-  const model = process.env.OPENAI_TTS_MODEL || (isOpenRouter ? "fish-audio/s2.1-pro-free:free" : "tts-1");
-  const responseFormat = isOpenRouter ? "mp3" : "opus";
+  if (isOpenRouter) throw new Error("La synthèse vocale OpenRouter n'est pas utilisée pour éviter un fallback MP3.");
+  const model = process.env.OPENAI_TTS_MODEL || "tts-1";
+  const responseFormat = "opus";
   const body: Record<string, unknown> = { model, input: text, response_format: responseFormat };
   // Fish Audio provides a multilingual default voice. Other OpenAI-compatible
   // models generally require an explicit voice.
-  if (!model.startsWith("fish-audio/")) {
-    body.voice = process.env.OPENAI_TTS_VOICE || "alloy";
-    body.speed = Number(process.env.OPENAI_TTS_SPEED || "1");
-  }
+  body.voice = process.env.OPENAI_TTS_VOICE || "alloy";
+  body.speed = Number(process.env.OPENAI_TTS_SPEED || "1");
   const response = await fetch(`${base}/audio/speech`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "https://close-ai-jade.vercel.app", "X-OpenRouter-Title": "CloseAI" },
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`TTS ${response.status}: ${(await response.text()).slice(0, 240)}`);
-  return { bytes: await response.arrayBuffer(), mime: responseFormat === "mp3" ? "audio/mpeg" : "audio/ogg" };
+  return { bytes: await response.arrayBuffer(), mime: "audio/ogg" };
 }
