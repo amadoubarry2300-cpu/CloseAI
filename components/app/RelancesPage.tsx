@@ -39,6 +39,11 @@ export default function RelancesPage() {
   const [tab, setTab] = useState<TabKey>("today");
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [schedulingId, setSchedulingId] = useState<string | null>(null);
+  const [schedDate, setSchedDate] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -55,6 +60,91 @@ export default function RelancesPage() {
       })
       .catch(() => setRelances([]));
   }, []);
+
+  async function patch(body: Record<string, unknown>) {
+    try {
+      const r = await authenticatedFetch("/api/data", { method: "PATCH", body: JSON.stringify(body) });
+      if (!r.ok) return null;
+      return (await r.json()) as { ok?: boolean; message?: string; sent?: boolean; error?: string };
+    } catch {
+      return null;
+    }
+  }
+
+  function updateLocal(id: string, changes: Partial<Relance>) {
+    setRelances((prev) => (prev ? prev.map((r) => (r.id === id ? { ...r, ...changes } : r)) : prev));
+  }
+
+  async function regenerate(r: Relance) {
+    if (busyId) return;
+    setBusyId(r.id);
+    const res = await patch({ resource: "follow_up", id: r.id, action: "regenerate" });
+    setBusyId(null);
+    if (res?.message) {
+      updateLocal(r.id, { proposedMessage: res.message });
+      showToast("✓ Nouveau message généré par l'IA");
+    } else {
+      showToast("Impossible de régénérer pour l'instant — réessayez.");
+    }
+  }
+
+  async function saveEdit(r: Relance) {
+    if (!editText.trim() || busyId) return;
+    setBusyId(r.id);
+    const res = await patch({ resource: "follow_up", id: r.id, message: editText.trim() });
+    setBusyId(null);
+    if (res?.ok) {
+      updateLocal(r.id, { proposedMessage: editText.trim() });
+      setEditingId(null);
+      showToast("✓ Message mis à jour");
+    } else {
+      showToast("Impossible d'enregistrer — réessayez.");
+    }
+  }
+
+  async function saveSchedule(r: Relance) {
+    if (!schedDate || busyId) return;
+    setBusyId(r.id);
+    const when = new Date(schedDate + "T09:00:00");
+    const res = await patch({ resource: "follow_up", id: r.id, scheduledAt: when.toISOString() });
+    setBusyId(null);
+    if (res?.ok) {
+      updateLocal(r.id, { recommendedAt: when.toISOString(), status: when.getTime() <= Date.now() ? "today" : "scheduled" });
+      setSchedulingId(null);
+      showToast(`✓ Relance reprogrammée au ${when.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} à 09 h 00`);
+    } else {
+      showToast("Impossible de reprogrammer — réessayez.");
+    }
+  }
+
+  async function sendRelance(r: Relance) {
+    if (busyId) return;
+    setBusyId(r.id);
+    const res = await patch({ resource: "follow_up", id: r.id, action: "send", message: editingId === r.id ? editText.trim() || r.proposedMessage : r.proposedMessage });
+    setBusyId(null);
+    if (res?.ok) {
+      updateLocal(r.id, { status: "done" });
+      setEditingId(null);
+      showToast(`✓ Relance envoyée à ${r.contactName}`);
+    } else {
+      showToast(res?.error || "L'envoi a échoué — réessayez.");
+    }
+  }
+
+  async function cancelRelance(r: Relance) {
+    if (busyId) return;
+    setBusyId(r.id);
+    const res = await patch({ resource: "follow_up", id: r.id, status: "cancelled" });
+    setBusyId(null);
+    if (res?.ok) {
+      updateLocal(r.id, { status: "cancelled" });
+      setEditingId(null);
+      setSchedulingId(null);
+      showToast("✓ Relance annulée");
+    } else {
+      showToast("Impossible d'annuler — réessayez.");
+    }
+  }
 
   const counts = useMemo(() => {
     const c: Record<TabKey, number> = { today: 0, scheduled: 0, done: 0, cancelled: 0 };
@@ -86,7 +176,6 @@ export default function RelancesPage() {
   }
 
   const list = relances.filter((r) => r.status === tab);
-  const soon = () => showToast("Bientôt disponible — rien n'a été envoyé pour l'instant.");
 
   return (
     <>
@@ -134,23 +223,52 @@ export default function RelancesPage() {
                   </small>
                   <p>{r.proposedMessage}</p>
                 </div>
-                <div className="relance-actions">
-                  <button onClick={soon}>
-                    <Sparkles size={13} /> Générer
-                  </button>
-                  <button onClick={soon}>
-                    <Pencil size={13} /> Modifier
-                  </button>
-                  <button onClick={soon}>
-                    <CalendarClock size={13} /> Programmer
-                  </button>
-                  <button className="primary" onClick={soon}>
-                    <Send size={13} /> Envoyer
-                  </button>
-                  <button className="danger" onClick={soon}>
-                    <X size={13} /> Annuler
-                  </button>
-                </div>
+                {(r.status === "today" || r.status === "scheduled") && (
+                  <>
+                    <div className="relance-actions">
+                      <button onClick={() => regenerate(r)} disabled={busyId === r.id}>
+                        <Sparkles size={13} /> {busyId === r.id ? "…" : "Générer"}
+                      </button>
+                      <button onClick={() => { setEditingId(editingId === r.id ? null : r.id); setEditText(r.proposedMessage); }} className={editingId === r.id ? "active" : ""}>
+                        <Pencil size={13} /> Modifier
+                      </button>
+                      <button onClick={() => { setSchedulingId(schedulingId === r.id ? null : r.id); setSchedDate(new Date(r.recommendedAt).toISOString().slice(0, 10)); }} className={schedulingId === r.id ? "active" : ""}>
+                        <CalendarClock size={13} /> Reprogrammer
+                      </button>
+                      <button className="primary" onClick={() => sendRelance(r)} disabled={busyId === r.id}>
+                        <Send size={13} /> {busyId === r.id ? "Envoi…" : "Envoyer"}
+                      </button>
+                      <button className="danger" onClick={() => cancelRelance(r)} disabled={busyId === r.id}>
+                        <X size={13} /> Annuler
+                      </button>
+                    </div>
+
+                    {editingId === r.id && (
+                      <div className="inline-form">
+                        <h4>✏️ Modifier le message</h4>
+                        <textarea className="textarea" rows={4} value={editText} onChange={(e) => setEditText(e.target.value)} autoFocus />
+                        <div className="inline-form-actions">
+                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingId(null)}>Annuler</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => saveEdit(r)} disabled={busyId === r.id || !editText.trim()}>✓ Enregistrer</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {schedulingId === r.id && (
+                      <div className="inline-form">
+                        <h4>📅 Reprogrammer la relance</h4>
+                        <label>Nouvelle date (envoi à 09 h 00)</label>
+                        <input type="date" className="input" value={schedDate} onChange={(e) => setSchedDate(e.target.value)} />
+                        <div className="inline-form-actions">
+                          <button className="btn btn-secondary btn-sm" onClick={() => setSchedulingId(null)}>Annuler</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => saveSchedule(r)} disabled={busyId === r.id || !schedDate}>✓ Reprogrammer</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {r.status === "done" && <div className="relance-status ok">✅ Relance envoyée</div>}
+                {r.status === "cancelled" && <div className="relance-status ko">✕ Relance annulée</div>}
               </div>
             </article>
           ))}

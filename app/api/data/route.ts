@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentOrganization } from "@/lib/supabase/route";
+import { sendText } from "@/lib/whatsapp/client";
+import { generateCommercialResponse } from "@/lib/ai/orchestrator";
 
 /**
  * Route unifiée des données de l'application (choix de déploiement mobile).
@@ -414,6 +416,7 @@ export async function PATCH(req: NextRequest) {
     contactId?: unknown;
     scheduledAt?: unknown;
     message?: unknown;
+    action?: unknown;
   } | null;
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Requête invalide" }, { status: 400 });
@@ -460,6 +463,79 @@ export async function PATCH(req: NextRequest) {
 
   /* --- Action : programmer une relance (follow_ups) --- */
   if (body.resource === "follow_up") {
+    /* ---- Actions sur une relance existante ---- */
+    const fuId = typeof body.id === "string" ? body.id : null;
+    if (fuId) {
+      const loadFollowUp = async () => {
+        const { data } = await db
+          .from("follow_ups")
+          .select("id,message,scheduled_at,status,conversations(id,whatsapp_account_id,contacts(id,name,phone))")
+          .eq("id", fuId)
+          .eq("organization_id", organizationId)
+          .maybeSingle();
+        return (((data ?? null) as unknown) as Record<string, any> | null);
+      };
+
+      if (body.action === "regenerate") {
+        const fu = await loadFollowUp();
+        const conv = fu?.conversations as Record<string, any> | undefined;
+        const contact = conv?.contacts as Record<string, any> | undefined;
+        if (!fu || !conv || !contact) return NextResponse.json({ error: "Relance introuvable" }, { status: 404 });
+        const { data: past } = await db.from("messages").select("direction,content").eq("conversation_id", conv.id).order("sent_at", { ascending: false }).limit(20);
+        const history = (past ?? []).reverse().map((m: { direction: string; content: string | null }) => ({ role: m.direction === "inbound" ? "prospect" : "assistant", content: m.content || "" }));
+        const { data: products } = await db.from("products").select("name,description,price,currency,benefits,payment_link").eq("organization_id", organizationId).eq("is_active", true).limit(1);
+        const p = (products ?? [])[0] as Record<string, any> | undefined;
+        const product = p ? { name: p.name, description: p.description, price: `${p.price} ${p.currency}`, benefits: p.benefits, paymentLink: p.payment_link } : undefined;
+        const { data: kb } = await db.from("knowledge_base").select("title,content").eq("organization_id", organizationId).eq("is_active", true).limit(8);
+        const knowledge = (kb ?? []).map((k: { title: string; content: string }) => `${k.title}: ${k.content}`).filter(Boolean);
+        const result = await generateCommercialResponse({ contact: contact.name, messages: history.length ? history : [{ role: "prospect", content: "Relance après silence" }], product, knowledge, tone: "chaleureux et professionnel, message court de relance", length: "courte" });
+        const upd = await db.from("follow_ups").update({ message: result.response }).eq("id", fuId).eq("organization_id", organizationId);
+        if (upd.error) return NextResponse.json({ error: "Échec de l'enregistrement" }, { status: 500 });
+        return NextResponse.json({ ok: true, message: result.response });
+      }
+
+      if (body.action === "send") {
+        const fu = await loadFollowUp();
+        const conv = fu?.conversations as Record<string, any> | undefined;
+        const contact = conv?.contacts as Record<string, any> | undefined;
+        if (!fu || !conv || !contact?.phone) return NextResponse.json({ error: "Relance ou numéro introuvable" }, { status: 404 });
+        const text = (typeof body.message === "string" && body.message.trim() ? body.message.trim() : (fu.message as string | null) || "").trim();
+        if (!text) return NextResponse.json({ error: "Aucun message à envoyer" }, { status: 400 });
+        let phoneId: string | null = null;
+        if (conv.whatsapp_account_id) {
+          const { data: wa } = await db.from("whatsapp_accounts").select("phone_number_id,is_active").eq("id", conv.whatsapp_account_id).maybeSingle();
+          if (wa?.is_active) phoneId = wa.phone_number_id;
+        }
+        if (!phoneId) {
+          const { data: wa } = await db.from("whatsapp_accounts").select("phone_number_id").eq("organization_id", organizationId).eq("is_active", true).limit(1).maybeSingle();
+          phoneId = wa?.phone_number_id ?? null;
+        }
+        if (!phoneId) return NextResponse.json({ error: "Aucun numéro WhatsApp connecté" }, { status: 400 });
+        let externalId: string | undefined;
+        try {
+          const out = await sendText(phoneId, contact.phone.replace(/[^\d]/g, ""), text);
+          externalId = ((out as Record<string, any>)?.messages ?? [])[0]?.id;
+        } catch (e) {
+          console.error("Relance send failed", e);
+          return NextResponse.json({ error: "L'envoi WhatsApp a échoué — réessayez" }, { status: 502 });
+        }
+        await db.from("messages").insert({ organization_id: organizationId, conversation_id: conv.id, direction: "outbound", type: "text", content: text, external_id: externalId, ai_generated: false, sent_at: new Date().toISOString() });
+        const upd = await db.from("follow_ups").update({ status: "done", sent_at: new Date().toISOString(), message: text }).eq("id", fuId).eq("organization_id", organizationId);
+        if (upd.error) return NextResponse.json({ error: "Message envoyé mais relance non clôturée" }, { status: 500 });
+        return NextResponse.json({ ok: true, sent: true });
+      }
+
+      const changes: Record<string, unknown> = {};
+      if (typeof body.message === "string" && body.message.trim()) changes.message = body.message.trim();
+      if (typeof body.scheduledAt === "string" && body.scheduledAt) changes.scheduled_at = body.scheduledAt;
+      if (body.status === "done" || body.status === "cancelled" || body.status === "scheduled") changes.status = body.status;
+      if (!Object.keys(changes).length) return NextResponse.json({ error: "Rien à mettre à jour" }, { status: 400 });
+      const r = await db.from("follow_ups").update(changes).eq("id", fuId).eq("organization_id", organizationId);
+      if (r.error) return NextResponse.json({ error: "Échec de la mise à jour" }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+
+    /* ---- Programmation d'une nouvelle relance ---- */
     const conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
     const contactId = typeof body.contactId === "string" ? body.contactId : null;
     const scheduledAt = typeof body.scheduledAt === "string" ? body.scheduledAt : null;

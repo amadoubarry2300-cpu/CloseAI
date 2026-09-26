@@ -858,3 +858,10 @@ footer{background:#071126;color:white;padding:58px 0 20px}.footer-grid{display:g
 .prospect-actions button.active { border-color: rgba(96,165,250,.6); background: rgba(59,130,246,.18); color: #fff; }
 .prospect-actions button:disabled { opacity: .55; cursor: default; }
 .app-shell .toast.success { border-color: rgba(52,211,153,.4); }
+
+/* Phase 3 suite — page Relances : boutons réels */
+.relance-actions button.active { border-color: rgba(96,165,250,.6); background: rgba(59,130,246,.14); color: var(--electric); }
+.relance-actions button:disabled { opacity: .55; cursor: default; }
+.relance-status { margin-top: 10px; font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 10px; }
+.relance-status.ok { background: rgba(16,185,129,.1); color: #059669; border: 1px solid rgba(16,185,129,.25); }
+.relance-status.ko { background: rgba(239,68,68,.08); color: #dc2626; border: 1px solid rgba(239,68,68,.22); }
