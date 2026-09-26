@@ -824,3 +824,23 @@ footer{background:#071126;color:white;padding:58px 0 20px}.footer-grid{display:g
 .app-shell .section-heading h3 { color: #fff; }
 .app-shell .section-heading p { color: var(--muted); }
 .app-shell .mini-select { background: #0b1426; border-color: var(--line); color: var(--muted); }
+
+/* ================================================================
+   PHASE 2 — Assistant IA, WhatsApp, Équipe
+   ================================================================ */
+.assistant-hero { display: flex; align-items: center; gap: 18px; padding: 22px 24px; flex-wrap: wrap; background: linear-gradient(135deg, #0c1d42, #0d2a5e); border: 1px solid #1d3a72; }
+.assistant-avatar { width: 56px; height: 56px; border-radius: 16px; background: rgba(59,130,246,.18); color: #7ab3ff; display: grid; place-items: center; flex: 0 0 auto; }
+.assistant-hero-copy { flex: 1; min-width: 220px; }
+.assistant-hero-copy h2 { margin: 0 0 5px; font-size: 22px; color: #fff; }
+.assistant-hero-copy p { margin: 0; color: #a9bbdc; font-size: 13px; line-height: 1.55; }
+.mode-banner { display: grid; gap: 6px; background: rgba(2,6,18,.5); border: 1px solid #1d2e52; border-radius: 14px; padding: 13px 15px; min-width: 235px; }
+.mode-banner b { font-size: 12.5px; letter-spacing: .04em; color: #93c5fd; }
+.mode-banner.auto b { color: #6ee7b7; }
+.mode-banner small { color: #8fa0c2; font-size: 11px; line-height: 1.5; }
+.prompt-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.prompt-card { display: flex; align-items: center; gap: 10px; border: 1px solid #1d2e52; background: rgba(96,165,250,.05); border-radius: 11px; padding: 12px 13px; font-size: 12.5px; font-weight: 600; color: #cdd9f0; transition: .15s; }
+.prompt-card:hover { border-color: rgba(96,165,250,.5); background: rgba(59,130,246,.12); color: #fff; }
+.prompt-card svg { margin-left: auto; color: #60a5fa; flex: 0 0 auto; }
+.prompt-icon { font-size: 16px; }
+.wa-connected { font-size: 23px; }
+@media (max-width: 700px) { .prompt-grid { grid-template-columns: 1fr; } .mode-banner { width: 100%; } }
