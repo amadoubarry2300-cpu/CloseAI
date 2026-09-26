@@ -1,17 +1,427 @@
 "use client";
 import { useEffect, useState } from "react";
-import { AlertTriangle, Bot, Check, ChevronRight, CircleCheck, KeyRound, Languages, MessageCircle, Mic, Save, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, UserRound, UsersRound, Volume2, Webhook, Zap } from "lucide-react";
-const tabs=[{id:"general",name:"Général",icon:Settings2},{id:"ai",name:"Assistant IA",icon:Bot},{id:"voice",name:"Voix & langues",icon:Mic},{id:"whatsapp",name:"WhatsApp",icon:MessageCircle},{id:"security",name:"Sécurité",icon:ShieldCheck},{id:"team",name:"Équipe",icon:UsersRound}];
-export default function SettingsPage(){const [tab,setTab]=useState("general");const [saved,setSaved]=useState(false);const [config,setConfig]=useState<Record<string,boolean>>({});useEffect(()=>{fetch("/api/health/config").then(r=>r.json()).then(setConfig).catch(()=>{})},[]);function save(e:React.FormEvent){e.preventDefault();setSaved(true);setTimeout(()=>setSaved(false),2000)}
- return <><div className="page-head"><div><h2>Paramètres</h2><p>Configurez votre organisation, votre IA et vos intégrations.</p></div></div><div className="settings-layout"><nav className="settings-tabs card">{tabs.map(({id,name,icon:Icon})=><button key={id} onClick={()=>setTab(id)} className={tab===id?"active":""}><Icon/><span>{name}</span><ChevronRight/></button>)}</nav><form className="settings-content card" onSubmit={save}>{tab==="general"&&<General/>}{tab==="ai"&&<AI/>}{tab==="voice"&&<Voice/>}{tab==="whatsapp"&&<WhatsApp config={config}/>} {tab==="security"&&<Security/>}{tab==="team"&&<Team/>}<div className="settings-save"><span>{saved&&<><CircleCheck/> Modifications enregistrées</>}</span><button className="btn btn-primary"><Save/> Enregistrer</button></div></form></div></>}
-function General(){return <SettingsSection title="Informations de l’organisation" subtitle="Ces informations sont visibles par votre équipe."><div className="settings-avatar"><span>NC</span><div><button type="button" className="btn btn-secondary btn-sm">Changer le logo</button><small>PNG ou JPG, 2 Mo maximum</small></div></div><div className="form-grid"><F label="Nom de l’entreprise" value="Nova Commerce"/><F label="Secteur d’activité" value="E-commerce"/><F label="Pays" value="Burkina Faso"/><F label="Fuseau horaire" value="Africa/Ouagadougou"/><F label="Email de contact" value="contact@novacommerce.com" type="email"/><F label="Devise" value="EUR — Euro"/></div></SettingsSection>}
-function AI(){return <><SettingsSection title="Comportement de l’assistant" subtitle="Définissez comment CloseAI communique avec vos prospects."><div className="field"><label>Ton principal</label><div className="tone-grid">{["Professionnel","Chaleureux","Direct","Premium","Amical","Persuasif"].map((x,i)=><label key={x} className={i===1?"selected":""}><input type="radio" name="tone" defaultChecked={i===1}/><span>{x}</span></label>)}</div></div><div className="form-grid"><Select label="Longueur des réponses" options={["Normale","Courte","Détaillée"]}/><Select label="Niveau de créativité" options={["Faible — très factuel","Équilibré","Créatif"]}/></div></SettingsSection><SettingsSection title="Mode de fonctionnement" subtitle="Gardez le contrôle sur les messages envoyés."><Toggle title="Mode Copilote par défaut" desc="L’IA propose, un humain valide avant l’envoi." checked/><Toggle title="Réponse automatique" desc="Autoriser uniquement dans les règles configurées."/><Toggle title="Transfert humain automatique" desc="Transférer en cas de risque, manque d’information ou demande explicite." checked/><div className="safety-info"><ShieldCheck/> Les règles de sécurité commerciale restent toujours actives, quel que soit le mode.</div></SettingsSection></>}
-function Voice(){return <><SettingsSection title="Réponses vocales" subtitle="Un vocal reçu déclenche une réponse vocale, dans la même langue."><Toggle title="Adapter automatiquement le format" desc="Texte → texte · Vocal → vocal" checked/><div className="form-grid"><Select label="Voix" options={["Awa — Féminine, chaleureuse","Amadou — Masculine, posée","Sophie — Féminine, premium"]}/><Select label="Vitesse" options={["Normale (1×)","Lente (0,8×)","Rapide (1,2×)"]}/><Select label="Langue par défaut" options={["Détection automatique","Français","English","Português"]}/><Select label="Qualité audio" options={["Haute qualité","Optimisée données"]}/></div><button type="button" className="voice-preview btn btn-secondary"><Volume2/> Écouter un aperçu <span className="audio-mini">|||||||||||||</span></button></SettingsSection><SettingsSection title="Langues prises en charge" subtitle="L’assistant détecte automatiquement la langue du prospect."><div className="language-tags"><span>Français <i>×</i></span><span>English <i>×</i></span><span>Português <i>×</i></span><button type="button">+ Ajouter</button></div></SettingsSection></>}
-function WhatsApp({config}:{config:Record<string,boolean>}){const connected=config.metaConfigured;return <><SettingsSection title="WhatsApp Business Cloud API" subtitle="Connexion officielle via les API Meta — aucun faux système WhatsApp."><div className={`connection-status ${connected?"connected":""}`}><span>{connected?<Check/>:<AlertTriangle/>}</span><div><b>{connected?"Configuration serveur détectée":"Configuration requise"}</b><p>{connected?"Les variables Meta nécessaires sont présentes côté serveur.":"Ajoutez vos identifiants dans les variables d’environnement du serveur."}</p></div><em>{connected?"Prêt":"Non connecté"}</em></div><div className="config-list"><Config label="Phone Number ID" env="META_WHATSAPP_PHONE_NUMBER_ID" ready={!!config.metaPhone}/><Config label="Business Account ID" env="META_WHATSAPP_BUSINESS_ACCOUNT_ID" ready={!!config.metaBusiness}/><Config label="Access Token" env="META_WHATSAPP_ACCESS_TOKEN" ready={!!config.metaToken} secret/><Config label="Verify Token" env="META_WHATSAPP_VERIFY_TOKEN" ready={!!config.metaVerify} secret/></div><div className="webhook-box"><Webhook/><div><b>URL du webhook</b><code>https://votre-domaine.com/api/whatsapp/webhook</code></div><button type="button" className="btn btn-secondary btn-sm">Copier</button></div><p className="server-note"><KeyRound/> Pour votre sécurité, les clés ne sont jamais saisies ni stockées dans le navigateur. Configurez-les côté serveur dans <code>.env.local</code>.</p></SettingsSection><SettingsSection title="Règles de messagerie" subtitle="Respectez les fenêtres Meta et les consentements."><Toggle title="Répondre dans la fenêtre de 24 heures" desc="Les messages libres ne partent que dans la fenêtre autorisée." checked/><Toggle title="Utiliser les modèles approuvés pour les relances" desc="Nécessite des templates validés dans Meta Business Manager." checked/></SettingsSection></>}
-function Security(){return <SettingsSection title="Sécurité commerciale" subtitle="Ces garde-fous ne peuvent pas être désactivés."><div className="guard-list">{["Ne jamais inventer de prix, promotion ou garantie","Ne jamais falsifier une preuve de paiement","Ne jamais usurper l’identité d’un humain","Ne pas utiliser de pression agressive ou mensongère","Transférer à un humain lorsque l’information manque"].map(x=><div key={x}><ShieldCheck/><span>{x}</span><b>Actif</b></div>)}</div><div className="form-grid"><Select label="Validation des preuves de paiement" options={["Toujours humaine","Via le fournisseur de paiement"]}/><Select label="Conservation des messages" options={["12 mois","6 mois","24 mois"]}/></div></SettingsSection>}
-function Team(){return <SettingsSection title="Membres de l’équipe" subtitle="Invitez des collaborateurs et attribuez des rôles."><div className="team-row"><span className="user-avatar">AM</span><div><b>Aïcha Mensah</b><small>aicha@novacommerce.com</small></div><span className="badge badge-blue">Propriétaire</span></div><div className="team-row"><span className="user-avatar purple">KB</span><div><b>Karim B.</b><small>karim@novacommerce.com</small></div><span className="badge">Agent</span></div><button type="button" className="btn btn-secondary"><UserRound/> Inviter un membre</button></SettingsSection>}
-function SettingsSection({title,subtitle,children}:{title:string;subtitle:string;children:React.ReactNode}){return <section className="settings-section"><div className="settings-section-head"><h3>{title}</h3><p>{subtitle}</p></div><div className="settings-section-body">{children}</div></section>}
-function F({label,value,type="text"}:{label:string;value:string;type?:string}){return <div className="field"><label>{label}</label><input className="input" type={type} defaultValue={value}/></div>}
-function Select({label,options}:{label:string;options:string[]}){return <div className="field"><label>{label}</label><select className="select">{options.map(x=><option key={x}>{x}</option>)}</select></div>}
-function Toggle({title,desc,checked}:{title:string;desc:string;checked?:boolean}){return <label className="toggle-row"><span><b>{title}</b><small>{desc}</small></span><input type="checkbox" defaultChecked={checked}/><i/></label>}
-function Config({label,env,ready,secret}:{label:string;env:string;ready:boolean;secret?:boolean}){return <div><span><b>{label}</b><code>{env}</code></span><em>{ready?(secret?"••••••••••••":"Configuré"):"Manquant"}</em><i className={ready?"ready":""}/></div>}
+import { useRouter } from "next/navigation";
+import {
+  AlertTriangle,
+  Check,
+  Building2,
+  Bot,
+  Globe2,
+  KeyRound,
+  LogOut,
+  MessageCircle,
+  Save,
+  ShieldCheck,
+  Users,
+  Webhook,
+} from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { authenticatedFetch, initialsOf } from "@/lib/app-fetch";
+
+type Settings = {
+  organization: {
+    id: string;
+    name: string;
+    industry: string | null;
+    country: string | null;
+    timezone: string;
+    default_currency: string;
+    onboarding_completed: boolean;
+  } | null;
+  members: Array<{ role: string; created_at: string; users: { full_name: string | null } | null }>;
+  whatsappAccounts: Array<{
+    id: string;
+    display_name: string | null;
+    phone_number: string | null;
+    phone_number_id: string | null;
+    business_account_id: string | null;
+    mode: "copilot" | "automatic";
+    is_active: boolean;
+  }>;
+  aiSettings: {
+    tone: string;
+    languages: string[];
+    response_length: string;
+    auto_match_format: boolean;
+    auto_handoff: boolean;
+  } | null;
+};
+
+type Me = {
+  user: { email: string; fullName: string };
+  subscription: { plan: string };
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Propriétaire",
+  admin: "Administrateur",
+  manager: "Manager",
+  agent: "Agent",
+  viewer: "Observateur",
+};
+
+const TONE_LABELS: Record<string, string> = {
+  warm: "Chaleureux",
+  professional: "Professionnel",
+  direct: "Direct",
+  premium: "Premium",
+  friendly: "Amical",
+};
+
+const TABS = [
+  { key: "general", label: "Général", icon: Building2 },
+  { key: "ai", label: "Assistant IA", icon: Bot },
+  { key: "whatsapp", label: "WhatsApp", icon: MessageCircle },
+  { key: "team", label: "Équipe", icon: Users },
+  { key: "security", label: "Sécurité", icon: ShieldCheck },
+] as const;
+
+export default function SettingsPage() {
+  const router = useRouter();
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("general");
+  const [orgName, setOrgName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    authenticatedFetch("/api/data?resource=settings")
+      .then(async (r) => {
+        if (!r.ok) throw new Error("Chargement impossible");
+        const body: Settings = await r.json();
+        setSettings(body);
+        setOrgName(body.organization?.name ?? "");
+      })
+      .catch((e: Error) => setError(e.message));
+    authenticatedFetch("/api/data?resource=me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setMe)
+      .catch(() => {});
+  }, []);
+
+  async function saveOrgName() {
+    setSaving(true);
+    setSaved(false);
+    setSaveError(null);
+    try {
+      const r = await authenticatedFetch("/api/data", {
+        method: "PATCH",
+        body: JSON.stringify({ resource: "settings", organizationName: orgName }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => null);
+        throw new Error(body?.error || "Échec de l’enregistrement");
+      }
+      setSaved(true);
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Échec de l’enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function signOut() {
+    const supabase = createClient();
+    if (supabase) await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  if (error) {
+    return (
+      <div className="empty-state">
+        <h3>Impossible de charger les paramètres</h3>
+        <p>{error}. Rechargez la page.</p>
+      </div>
+    );
+  }
+
+  if (!settings) {
+    return (
+      <div className="empty-state">
+        <span className="spinner blue-spinner" />
+        <p>Chargement des paramètres…</p>
+      </div>
+    );
+  }
+
+  const accounts = Array.isArray(settings.whatsappAccounts) ? settings.whatsappAccounts : [];
+  const wa = accounts.find((a) => a.is_active) ?? accounts[0] ?? null;
+  const members = Array.isArray(settings.members) ? settings.members : [];
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h2>Paramètres</h2>
+          <p>Configurez votre organisation, votre assistant et vos intégrations.</p>
+        </div>
+      </div>
+
+      <div className="settings-layout">
+        <div className="settings-tabs card">
+          {TABS.map(({ key, label, icon: Icon }) => (
+            <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="settings-content card">
+          {tab === "general" && (
+            <section className="settings-section">
+              <div className="settings-section-head">
+                <h3>Organisation</h3>
+                <p>Le nom affiché dans votre espace CloseAI.</p>
+              </div>
+              <div className="settings-section-body">
+                <div className="field">
+                  <label>Nom de l’organisation</label>
+                  <input
+                    className="input"
+                    value={orgName}
+                    onChange={(e) => {
+                      setOrgName(e.target.value);
+                      setSaved(false);
+                      setSaveError(null);
+                    }}
+                  />
+                </div>
+                <div className="settings-avatar">
+                  <span>{initialsOf(orgName)}</span>
+                  <div>
+                    <b>{orgName || "—"}</b>
+                    <small>
+                      {settings.organization?.country || "—"} · {settings.organization?.timezone || "UTC"}
+                    </small>
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Devise par défaut</label>
+                    <input className="input" value={settings.organization?.default_currency || "EUR"} disabled />
+                  </div>
+                  <div className="field">
+                    <label>Secteur</label>
+                    <input className="input" value={settings.organization?.industry || "Non défini"} disabled />
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  {saved && (
+                    <span className="small" style={{ color: "#0c8b64", display: "flex", gap: 5, alignItems: "center", marginRight: "auto" }}>
+                      <Check size={14} /> Enregistré
+                    </span>
+                  )}
+                  {saveError && (
+                    <span className="small" style={{ color: "#c0392b", marginRight: "auto" }}>{saveError}</span>
+                  )}
+                  <button className="btn btn-primary" onClick={saveOrgName} disabled={saving || orgName.trim().length < 2}>
+                    <Save size={15} /> {saving ? "Enregistrement…" : "Enregistrer"}
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === "ai" && (
+            <section className="settings-section">
+              <div className="settings-section-head">
+                <h3>Assistant IA</h3>
+                <p>Configuration actuelle de votre assistant commercial.</p>
+              </div>
+              <div className="settings-section-body">
+                <div className="form-grid">
+                  <div className="field">
+                    <label>Ton principal</label>
+                    <input
+                      className="input"
+                      value={TONE_LABELS[settings.aiSettings?.tone ?? ""] ?? settings.aiSettings?.tone ?? "Chaleureux"}
+                      disabled
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Longueur des réponses</label>
+                    <input
+                      className="input"
+                      value={
+                        settings.aiSettings?.response_length === "short"
+                          ? "Courte"
+                          : settings.aiSettings?.response_length === "detailed"
+                            ? "Détaillée"
+                            : "Normale"
+                      }
+                      disabled
+                    />
+                  </div>
+                </div>
+                <div className="toggle-row">
+                  <span>
+                    <b>Adapter automatiquement le format</b>
+                    <small>Texte → texte · Vocal → vocal</small>
+                  </span>
+                  <input type="checkbox" readOnly checked={settings.aiSettings?.auto_match_format ?? true} />
+                  <i />
+                </div>
+                <div className="toggle-row">
+                  <span>
+                    <b>Transfert humain automatique</b>
+                    <small>Transférer en cas de risque ou d’information manquante</small>
+                  </span>
+                  <input type="checkbox" readOnly checked={settings.aiSettings?.auto_handoff ?? true} />
+                  <i />
+                </div>
+                <div className="field">
+                  <label>Langues prises en charge</label>
+                  <div className="language-tags">
+                    {(settings.aiSettings?.languages ?? ["fr"]).map((l) => (
+                      <span key={l}>{l === "fr" ? "Français" : l === "en" ? "English" : l}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="safety-info">
+                  <ShieldCheck /> La voix de synthèse (Fish Audio) est configurée côté serveur pour
+                  garantir sa stabilité. Le mode de réponse se gère depuis l’onglet WhatsApp.
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === "whatsapp" && (
+            <section className="settings-section">
+              <div className="settings-section-head">
+                <h3>WhatsApp Business Cloud API</h3>
+                <p>Connexion officielle via les API Meta — aucun faux système WhatsApp.</p>
+              </div>
+              <div className="settings-section-body">
+                <div className={`connection-status ${wa ? "connected" : ""}`}>
+                  <span>{wa ? <Check /> : <AlertTriangle />}</span>
+                  <div>
+                    <b>{wa ? "Compte WhatsApp connecté" : "Aucun compte WhatsApp rattaché"}</b>
+                    <p>
+                      {wa
+                        ? `Numéro ${wa.phone_number || "configuré"}${wa.display_name ? ` (${wa.display_name})` : ""} — mode ${wa.mode === "automatic" ? "automatique" : "Copilote"}.`
+                        : "Contactez l’administrateur ou rattachez un numéro à votre organisation."}
+                    </p>
+                  </div>
+                  <em>{wa ? "Prêt" : "Non connecté"}</em>
+                </div>
+                {wa && (
+                  <div className="config-list">
+                    <div>
+                      <span>
+                        <b>Numéro d’affichage</b>
+                        <code>phone_number</code>
+                      </span>
+                      <em>{wa.phone_number || "—"}</em>
+                      <i className="ready" />
+                    </div>
+                    <div>
+                      <span>
+                        <b>Phone Number ID</b>
+                        <code>phone_number_id</code>
+                      </span>
+                      <em>{wa.phone_number_id || "—"}</em>
+                      <i className="ready" />
+                    </div>
+                    <div>
+                      <span>
+                        <b>Mode de réponse</b>
+                        <code>whatsapp_accounts.mode</code>
+                      </span>
+                      <em>{wa.mode === "automatic" ? "Automatique" : "Copilote"}</em>
+                      <i className="ready" />
+                    </div>
+                  </div>
+                )}
+                <div className="webhook-box">
+                  <Webhook />
+                  <div>
+                    <b>URL du webhook</b>
+                    <code>{appUrl}/api/whatsapp/webhook</code>
+                  </div>
+                </div>
+                <p className="server-note">
+                  <KeyRound /> Pour votre sécurité, les jetons d’accès Meta sont configurés
+                  exclusivement côté serveur et ne transitent jamais par le navigateur.
+                </p>
+              </div>
+            </section>
+          )}
+
+          {tab === "team" && (
+            <section className="settings-section">
+              <div className="settings-section-head">
+                <h3>Membres de l’équipe</h3>
+                <p>Les personnes qui ont accès à cette organisation.</p>
+              </div>
+              <div className="settings-section-body">
+                {members.map((m, i) => (
+                  <div className="team-row" key={i}>
+                    <span className={`user-avatar ${i % 2 ? "purple" : ""}`}>
+                      {initialsOf(m.users?.full_name, "?")}
+                    </span>
+                    <div>
+                      <b>{m.users?.full_name || "Membre"}</b>
+                      <small>Membre depuis le {new Date(m.created_at).toLocaleDateString("fr-FR")}</small>
+                    </div>
+                    <span className="badge badge-blue">{ROLE_LABELS[m.role] ?? m.role}</span>
+                  </div>
+                ))}
+                <p className="server-note">
+                  <Users /> L’invitation de nouveaux membres arrivera dans une prochaine
+                  mise à jour.
+                </p>
+              </div>
+            </section>
+          )}
+
+          {tab === "security" && (
+            <section className="settings-section">
+              <div className="settings-section-head">
+                <h3>Sécurité commerciale</h3>
+                <p>Ces garde-fous ne peuvent pas être désactivés.</p>
+              </div>
+              <div className="settings-section-body">
+                <div className="guard-list">
+                  {[
+                    "Ne jamais inventer de prix, promotion ou garantie",
+                    "Ne jamais falsifier une preuve de paiement",
+                    "Ne jamais usurper l’identité d’un humain",
+                    "Ne pas utiliser de pression agressive ou mensongère",
+                    "Transférer à un humain lorsque l’information manque",
+                  ].map((x) => (
+                    <div key={x}>
+                      <ShieldCheck />
+                      <span>{x}</span>
+                      <b>Actif</b>
+                    </div>
+                  ))}
+                </div>
+                <div className="field">
+                  <label>Compte</label>
+                  <div className="team-row">
+                    <span className="user-avatar">{initialsOf(me?.user.fullName, me?.user.email)}</span>
+                    <div>
+                      <b>{me?.user.fullName || "Mon compte"}</b>
+                      <small>{me?.user.email}</small>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" onClick={signOut}>
+                      <LogOut size={14} /> Se déconnecter
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
