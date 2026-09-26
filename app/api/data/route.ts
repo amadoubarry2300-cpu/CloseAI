@@ -207,7 +207,7 @@ async function resourceConversations(
 
   const listRes = await db
     .from("conversations")
-    .select("id,status,intent,interest_level,objection,sentiment,urgency,lead_score,next_action,human_takeover_at,updated_at,contacts(id,name,phone,country,product_id,potential_value,products(name))")
+    .select("id,status,intent,interest_level,objection,sentiment,urgency,lead_score,next_action,human_takeover_at,updated_at,contacts(id,name,phone,country,status,product_id,potential_value,products(name))")
     .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false })
     .limit(50);
@@ -350,6 +350,8 @@ export async function GET(req: NextRequest) {
       return resourceConversations(db, organizationId, req.nextUrl.searchParams.get("id"));
     case "contacts":
       return resourceContacts(db, organizationId);
+    case "relances":
+      return resourceRelances(db, organizationId);
     case "settings":
       return resourceSettings(db, organizationId);
     case "me":
@@ -358,16 +360,124 @@ export async function GET(req: NextRequest) {
   }
 }
 
+
+async function resourceRelances(
+  db: NonNullable<Awaited<ReturnType<typeof currentOrganization>>["db"]>,
+  organizationId: string
+) {
+  const res = await db
+    .from("follow_ups")
+    .select(
+      "id,scheduled_at,message,status,sent_at,conversations(id,next_action,contacts(id,name,phone))"
+    )
+    .eq("organization_id", organizationId)
+    .order("scheduled_at", { ascending: true })
+    .limit(100);
+  const rows = (((res.data ?? []) as unknown) as Array<Record<string, any>>);
+  const now = Date.now();
+  const relances = rows.map((f) => {
+    const conv = f.conversations ?? {};
+    const contact = conv.contacts ?? {};
+    const when = new Date(f.scheduled_at).getTime();
+    let status: "today" | "scheduled" | "done" | "cancelled" = "scheduled";
+    if (f.status === "cancelled") status = "cancelled";
+    else if (f.sent_at) status = "done";
+    else if (when <= now) status = "today";
+    return {
+      id: String(f.id),
+      contactName: contact.name || contact.phone || "Prospect",
+      phone: contact.phone || "",
+      motif: conv.next_action || "Relance programmée",
+      lastExchange: "",
+      recommendedAt: f.scheduled_at,
+      proposedMessage: f.message || "",
+      status,
+    };
+  });
+  return NextResponse.json({ relances });
+}
+
 export async function PATCH(req: NextRequest) {
-  const { db, organizationId } = await currentOrganization(req);
+  const { db, organizationId, user } = await currentOrganization(req);
   if (!db || !organizationId) return unauthorized();
 
-  const body = (await req.json().catch(() => null)) as { resource?: string; organizationName?: unknown; mode?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as {
+    resource?: string;
+    organizationName?: unknown;
+    mode?: unknown;
+    id?: unknown;
+    status?: unknown;
+    notes?: unknown;
+    nextAction?: unknown;
+    interestLevel?: unknown;
+    conversationId?: unknown;
+    contactId?: unknown;
+    scheduledAt?: unknown;
+    message?: unknown;
+  } | null;
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Requête invalide" }, { status: 400 });
   }
   if (body.resource === "settings") {
     return patchSettings(db, organizationId, body);
   }
+
+  /* --- Action : marquer un prospect (statut contact) --- */
+  if (body.resource === "contact") {
+    const id = typeof body.id === "string" ? body.id : null;
+    if (!id) return NextResponse.json({ error: "id manquant" }, { status: 400 });
+    const patch: Record<string, unknown> = {};
+    if (typeof body.status === "string") patch.status = body.status;
+    if (typeof body.notes === "string") patch.notes = body.notes;
+    if (typeof body.nextAction === "string") patch.next_action = body.nextAction;
+    if (!Object.keys(patch).length) return NextResponse.json({ error: "Rien à modifier" }, { status: 400 });
+    patch.updated_at = new Date().toISOString();
+    const r = await db.from("contacts").update(patch).eq("id", id).eq("organization_id", organizationId);
+    if (r.error) return NextResponse.json({ error: "Échec de la mise à jour" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  /* --- Action : transférer à un humain / reprendre, niveau d'intérêt --- */
+  if (body.resource === "conversation") {
+    const id = typeof body.id === "string" ? body.id : null;
+    if (!id) return NextResponse.json({ error: "id manquant" }, { status: 400 });
+    const patch: Record<string, unknown> = {};
+    if (body.status === "human_required") {
+      patch.status = "human_required";
+      patch.human_takeover_at = new Date().toISOString();
+    } else if (body.status === "open") {
+      patch.status = "open";
+      patch.human_takeover_at = null;
+    }
+    if (typeof body.interestLevel === "string") patch.interest_level = body.interestLevel;
+    if (typeof body.nextAction === "string") patch.next_action = body.nextAction;
+    if (!Object.keys(patch).length) return NextResponse.json({ error: "Rien à modifier" }, { status: 400 });
+    patch.updated_at = new Date().toISOString();
+    const r = await db.from("conversations").update(patch).eq("id", id).eq("organization_id", organizationId);
+    if (r.error) return NextResponse.json({ error: "Échec de la mise à jour" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  /* --- Action : programmer une relance (follow_ups) --- */
+  if (body.resource === "follow_up") {
+    const conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
+    const contactId = typeof body.contactId === "string" ? body.contactId : null;
+    const scheduledAt = typeof body.scheduledAt === "string" ? body.scheduledAt : null;
+    if (!conversationId || !contactId || !scheduledAt) {
+      return NextResponse.json({ error: "conversationId, contactId et scheduledAt requis" }, { status: 400 });
+    }
+    const r = await db.from("follow_ups").insert({
+      organization_id: organizationId,
+      conversation_id: conversationId,
+      contact_id: contactId,
+      scheduled_at: scheduledAt,
+      message: typeof body.message === "string" && body.message.trim() ? body.message.trim() : null,
+      status: "scheduled",
+      created_by: user?.id ?? null,
+    });
+    if (r.error) return NextResponse.json({ error: "Échec de l'enregistrement de la relance" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ error: "Ressource inconnue" }, { status: 400 });
 }

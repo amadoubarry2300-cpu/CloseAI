@@ -27,7 +27,7 @@ type Conversation = {
   lead_score: number | null;
   next_action: string | null;
   updated_at: string;
-  contacts: { id: string; name: string | null; phone: string; country: string | null } | null;
+  contacts: { id: string; name: string | null; phone: string; country: string | null; status?: string | null; notes?: string | null } | null;
   product?: string | null;
   potential_value?: number | null;
   unread?: number | null;
@@ -45,7 +45,7 @@ type Message = {
   analysis?: { intention: string; sentiment: string; objection: string; score: number } | null;
 };
 
-type Note = { author: string; text: string; created_at: string };
+type Note = { author?: string; text: string; created_at?: string };
 type Detail = { conversation: Conversation; messages: Message[]; notes?: Note[] };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -111,6 +111,13 @@ export default function InboxPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [relanceOpen, setRelanceOpen] = useState(false);
+  const [relanceDate, setRelanceDate] = useState("");
+  const [relanceMsg, setRelanceMsg] = useState("");
+  const [busy, setBusy] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showToast(msg: string) {
@@ -154,6 +161,31 @@ export default function InboxPage() {
       .finally(() => setDetailLoading(false));
   }, [selectedId]);
 
+  // Notes dérivées du détail (tableau explicite ou champ contacts.notes)
+  useEffect(() => {
+    if (!detail) {
+      setNotes([]);
+      return;
+    }
+    const raw = detail.notes;
+    if (Array.isArray(raw) && raw.length) {
+      setNotes(raw);
+    } else {
+      const text = detail.conversation?.contacts?.notes;
+      setNotes(
+        typeof text === "string" && text.trim()
+          ? text
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => ({ text: line.replace(/^\[[^\]]*\]\s*/, "") }))
+          : []
+      );
+    }
+    setRelanceMsg(detail.conversation?.next_action || "");
+    const tomorrow = new Date(Date.now() + 86400000);
+    setRelanceDate(tomorrow.toISOString().slice(0, 10));
+  }, [detail]);
+
   if (error) {
     return (
       <div className="empty-state">
@@ -195,7 +227,87 @@ export default function InboxPage() {
   });
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const isHot = selected?.contacts?.status === "hot" || selected?.interest_level === "high";
   const soon = () => showToast("Bientôt disponible — rien n'a été envoyé pour l'instant.");
+
+  async function patch(body: Record<string, unknown>) {
+    try {
+      const r = await authenticatedFetch("/api/data", { method: "PATCH", body: JSON.stringify(body) });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  function updateLocal(id: string, changes: Partial<Conversation>) {
+    setConversations((prev) =>
+      prev ? prev.map((c) => (c.id === id ? { ...c, ...changes } : c)) : prev
+    );
+  }
+
+  async function markHot() {
+    if (!selected || busy) return;
+    setBusy(true);
+    const name = selected.contacts?.name || "Prospect";
+    updateLocal(selected.id, {
+      interest_level: "high",
+      contacts: selected.contacts ? { ...selected.contacts, status: "hot" } : selected.contacts,
+    });
+    showToast(`✓ ${name} marqué comme chaud`);
+    const okContact = await patch({ resource: "contact", id: selected.contacts?.id, status: "hot" });
+    await patch({ resource: "conversation", id: selected.id, interestLevel: "high" });
+    if (!okContact) showToast("Impossible d'enregistrer pour l'instant — réessayez.");
+    setBusy(false);
+  }
+
+  async function handOff() {
+    if (!selected || busy) return;
+    const toHuman = selected.status !== "human_required";
+    setBusy(true);
+    updateLocal(selected.id, { status: toHuman ? "human_required" : "open" });
+    showToast(
+      toHuman
+        ? "✓ Transféré à un humain — la conversation attend votre réponse"
+        : "✓ Conversation reprise — l'IA continue de proposer ses réponses"
+    );
+    const ok = await patch({ resource: "conversation", id: selected.id, status: toHuman ? "human_required" : "open" });
+    if (!ok) showToast("Impossible d'enregistrer pour l'instant — réessayez.");
+    setBusy(false);
+  }
+
+  async function addNote() {
+    if (!selected || !noteText.trim() || busy) return;
+    const text = noteText.trim();
+    const now = new Date();
+    const stamp = `${now.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })} ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+    setNotes((prev) => [...prev, { author: "Vous", text, created_at: now.toISOString() }]);
+    setNoteText("");
+    setNoteOpen(false);
+    showToast("✓ Note ajoutée");
+    const existing = detail?.conversation?.contacts?.notes;
+    const newText = `${typeof existing === "string" && existing.trim() ? existing.trim() + "\n" : ""}[${stamp}] ${text}`;
+    const ok = await patch({ resource: "contact", id: selected.contacts?.id, notes: newText });
+    if (!ok) showToast("Note affichée, mais l'enregistrement a échoué — réessayez.");
+  }
+
+  async function scheduleRelance() {
+    if (!selected || !relanceDate || busy) return;
+    setBusy(true);
+    const when = new Date(relanceDate + "T09:00:00");
+    showToast(
+      `✓ Relance programmée pour le ${when.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} à 09 h 00`
+    );
+    setRelanceOpen(false);
+    const ok = await patch({
+      resource: "follow_up",
+      conversationId: selected.id,
+      contactId: selected.contacts?.id,
+      scheduledAt: when.toISOString(),
+      message: relanceMsg,
+    });
+    if (!ok) showToast("Impossible d'enregistrer la relance — réessayez.");
+    setBusy(false);
+  }
 
   return (
     <div className={`inbox-shell ${selectedId ? "chat-mode" : "list-mode"} ${showDetails ? "details-open" : ""}`}>
@@ -511,29 +623,84 @@ export default function InboxPage() {
             )}
 
             <div className="prospect-actions">
-              <button onClick={soon}>
-                <Flame size={14} /> Marquer comme chaud
+              <button onClick={markHot} disabled={busy || isHot}>
+                <Flame size={14} /> {isHot ? "✓ Déjà chaud" : "Marquer comme chaud"}
               </button>
-              <button onClick={soon}>
+              <button onClick={() => setRelanceOpen((v) => !v)} className={relanceOpen ? "active" : ""}>
                 <RefreshCw size={14} /> Programmer une relance
               </button>
-              <button onClick={soon}>
-                <UserRoundCheck size={14} /> Transférer à un humain
+              <button onClick={handOff} disabled={busy}>
+                <UserRoundCheck size={14} />
+                {selected.status === "human_required" ? "Reprendre la main" : "Transférer à un humain"}
               </button>
-              <button onClick={soon}>
+              <button onClick={() => setNoteOpen((v) => !v)} className={noteOpen ? "active" : ""}>
                 <NotebookPen size={14} /> Ajouter une note
               </button>
             </div>
 
+            {relanceOpen && (
+              <div className="inline-form">
+                <h4>🔄 Programmer une relance</h4>
+                <label>Date recommandée</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={relanceDate}
+                  onChange={(e) => setRelanceDate(e.target.value)}
+                />
+                <label>Message proposé (modifiable avant envoi)</label>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  value={relanceMsg}
+                  onChange={(e) => setRelanceMsg(e.target.value)}
+                  placeholder="Ex : Bonjour ! Avez-vous eu le temps de réfléchir…"
+                />
+                <div className="inline-form-actions">
+                  <button className="btn btn-secondary btn-sm" onClick={() => setRelanceOpen(false)}>
+                    Annuler
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={scheduleRelance} disabled={busy || !relanceDate}>
+                    ✓ Programmer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {noteOpen && (
+              <div className="inline-form">
+                <h4>📝 Nouvelle note</h4>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Ex : Rappeler ce soir, propose le paiement Wave…"
+                  autoFocus
+                />
+                <div className="inline-form-actions">
+                  <button className="btn btn-secondary btn-sm" onClick={() => setNoteOpen(false)}>
+                    Annuler
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={addNote} disabled={busy || !noteText.trim()}>
+                    ✓ Enregistrer la note
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="prospect-section">
               <h4>Notes</h4>
-              {detail?.notes && detail.notes.length > 0 ? (
-                detail.notes.map((n, i) => (
+              {notes.length > 0 ? (
+                notes.map((n, i) => (
                   <div className="note" key={i}>
                     <p>{n.text}</p>
-                    <small>
-                      {n.author} · {timeAgo(n.created_at)}
-                    </small>
+                    {(n.author || n.created_at) && (
+                      <small>
+                        {n.author || ""}
+                        {n.created_at ? `${n.author ? " · " : ""}il y a ${timeAgo(n.created_at)}` : ""}
+                      </small>
+                    )}
                   </div>
                 ))
               ) : (
