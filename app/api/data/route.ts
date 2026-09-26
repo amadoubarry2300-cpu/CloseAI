@@ -153,7 +153,7 @@ async function resourceDashboard(
 
   return NextResponse.json({
     range: rangeParam,
-    currency: orgRes.data?.default_currency ?? "EUR",
+    currency: orgRes.data?.default_currency ?? "XOF",
     hasData: cnt(convTotalRes as unknown as CountRes) > 0 || msgRows.length > 0,
     conversationsToday: cnt(convsTodayRes as unknown as CountRes),
     hotProspects: cnt(hotCountRes as unknown as CountRes),
@@ -198,21 +198,25 @@ async function resourceConversations(
     if (convRes.error || !convRes.data) {
       return NextResponse.json({ error: "Conversation introuvable" }, { status: 404 });
     }
-    const msgsRes = await db
-      .from("messages")
-      .select("id,direction,type,content,ai_generated,media_mime,sent_at")
-      .eq("conversation_id", id)
-      .order("sent_at", { ascending: true })
-      .limit(300);
-    return NextResponse.json({ conversation: convRes.data, messages: msgsRes.data ?? [] });
+    const [msgsRes, orgRes] = await Promise.all([
+      db.from("messages")
+        .select("id,direction,type,content,ai_generated,media_mime,sent_at")
+        .eq("conversation_id", id)
+        .order("sent_at", { ascending: true })
+        .limit(300),
+      db.from("organizations").select("default_currency").eq("id", organizationId).maybeSingle(),
+    ]);
+    return NextResponse.json({ currency: orgRes.data?.default_currency ?? "XOF", conversation: convRes.data, messages: msgsRes.data ?? [] });
   }
 
-  const listRes = await db
-    .from("conversations")
-    .select("id,status,intent,interest_level,objection,sentiment,urgency,lead_score,next_action,human_takeover_at,updated_at,contacts(id,name,phone,country,status,product_id,potential_value,products(name))")
-    .eq("organization_id", organizationId)
-    .order("updated_at", { ascending: false })
-    .limit(50);
+  const [listRes, orgRes] = await Promise.all([
+    db.from("conversations")
+      .select("id,status,intent,interest_level,objection,sentiment,urgency,lead_score,next_action,human_takeover_at,updated_at,contacts(id,name,phone,country,status,product_id,potential_value,products(name))")
+      .eq("organization_id", organizationId)
+      .order("updated_at", { ascending: false })
+      .limit(50),
+    db.from("organizations").select("default_currency").eq("id", organizationId).maybeSingle(),
+  ]);
 
   const conversations = (((listRes.data ?? []) as unknown) as Array<{ id: string; [key: string]: unknown }>);
   const ids = conversations.map((c) => c.id);
@@ -233,6 +237,7 @@ async function resourceConversations(
   }
 
   return NextResponse.json({
+    currency: orgRes.data?.default_currency ?? "XOF",
     conversations: conversations.map((c) => ({ ...c, lastMessage: lastMessages[c.id] ?? null })),
   });
 }
@@ -245,7 +250,7 @@ async function resourceContacts(
 ) {
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-  const [listRes, totalRes, newRes] = await Promise.all([
+  const [listRes, totalRes, newRes, orgRes] = await Promise.all([
     db.from("contacts")
       .select("id,name,phone,country,status,potential_value,last_interaction_at,next_action,created_at,products(name),conversations(lead_score,status)")
       .eq("organization_id", organizationId)
@@ -253,6 +258,7 @@ async function resourceContacts(
       .limit(200),
     db.from("contacts").select("id", { count: "exact", head: true }).eq("organization_id", organizationId),
     db.from("contacts").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).gte("created_at", monthStart),
+    db.from("organizations").select("default_currency").eq("id", organizationId).maybeSingle(),
   ]);
 
   const rows = (((listRes.data ?? []) as unknown) as Array<{
@@ -287,6 +293,7 @@ async function resourceContacts(
   });
 
   return NextResponse.json({
+    currency: orgRes.data?.default_currency ?? "XOF",
     contacts,
     kpis: {
       total: cnt(totalRes as unknown as CountRes) || contacts.length,

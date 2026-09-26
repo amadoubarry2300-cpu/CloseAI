@@ -206,7 +206,7 @@ export default function SettingsPage() {
                 <div className="form-grid">
                   <div className="field">
                     <label>Devise par défaut</label>
-                    <input className="input" value={settings.organization?.default_currency || "EUR"} disabled />
+                    <input className="input" value={settings.organization?.default_currency || "XOF"} disabled />
                   </div>
                   <div className="field">
                     <label>Secteur</label>

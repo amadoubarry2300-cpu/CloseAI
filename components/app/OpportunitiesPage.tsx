@@ -1,15 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Banknote,
-  ChevronLeft,
-  ChevronRight,
-  Flame,
-  GripVertical,
-  Target,
-  UserRoundCheck,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Banknote, Flame, Target, UserRoundCheck } from "lucide-react";
 import { authenticatedFetch, formatAmount, initialsOf } from "@/lib/app-fetch";
 
 type Contact = {
@@ -47,23 +39,15 @@ function defaultStage(c: Contact): StageKey {
 
 export default function OpportunitiesPage() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const [currency, setCurrency] = useState("XOF");
   const [error, setError] = useState<string | null>(null);
-  const [overrides, setOverrides] = useState<Record<string, StageKey>>({});
-  const [toast, setToast] = useState<string | null>(null);
-  const [dragged, setDragged] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function showToast(msg: string) {
-    setToast(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 2800);
-  }
 
   useEffect(() => {
     authenticatedFetch("/api/data?resource=contacts")
       .then(async (r) => {
         if (!r.ok) throw new Error("Chargement impossible");
         const body = await r.json();
+        setCurrency(body.currency || "XOF");
         setContacts(body.contacts ?? []);
       })
       .catch((e: Error) => setError(e.message));
@@ -74,11 +58,10 @@ export default function OpportunitiesPage() {
       nouveau: [], interesse: [], chaud: [], tres_chaud: [], paiement: [], client: [], perdu: [],
     };
     for (const c of contacts ?? []) {
-      const key = overrides[c.id] ?? defaultStage(c);
-      map[key].push(c);
+      map[defaultStage(c)].push(c);
     }
     return map;
-  }, [contacts, overrides]);
+  }, [contacts]);
 
   if (error) {
     return (
@@ -111,21 +94,6 @@ export default function OpportunitiesPage() {
     );
   }
 
-  function moveTo(id: string, stage: StageKey) {
-    setOverrides((o) => ({ ...o, [id]: stage }));
-    const label = STAGES.find((s) => s.key === stage)?.label ?? stage;
-    showToast(`Déplacé vers « ${label} » — la synchronisation serveur arrive prochainement.`);
-  }
-
-  function shift(id: string, dir: -1 | 1) {
-    const c = (contacts ?? []).find((x) => x.id === id);
-    if (!c) return;
-    const current = overrides[id] ?? defaultStage(c);
-    const idx = STAGES.findIndex((s) => s.key === current);
-    const next = STAGES[Math.min(STAGES.length - 1, Math.max(0, idx + dir))];
-    if (next.key !== current) moveTo(id, next.key);
-  }
-
   const pipelineValue = (staged.interesse.concat(staged.chaud, staged.tres_chaud, staged.paiement))
     .reduce((s, c) => s + (c.potentialValue ?? 0), 0);
   const clientCount = staged.client.length;
@@ -152,7 +120,7 @@ export default function OpportunitiesPage() {
               <Banknote size={16} />
             </i>
           </div>
-          <div className="kpi-value">{formatAmount(pipelineValue, "XOF")}</div>
+          <div className="kpi-value">{formatAmount(pipelineValue, currency)}</div>
           <div className="kpi-foot">
             <span className="kpi-sub">opportunités en cours</span>
           </div>
@@ -171,8 +139,8 @@ export default function OpportunitiesPage() {
         </div>
       </div>
 
-      <p className="small muted" style={{ display: "flex", gap: 7, alignItems: "center", margin: "14px 2px" }}>
-        <GripVertical size={14} /> Glissez-déposez une carte d'une colonne à l'autre, ou utilisez les flèches.
+      <p className="small muted" style={{ margin: "14px 2px" }}>
+        Les étapes reflètent le niveau d’intérêt du prospect à partir des échanges.
       </p>
 
       <div className="kanban">
@@ -180,19 +148,7 @@ export default function OpportunitiesPage() {
           const items = staged[s.key];
           const total = items.reduce((sum, c) => sum + (c.potentialValue ?? 0), 0);
           return (
-            <div
-              className={`kanban-col ${dragged ? "drop-target" : ""}`}
-              key={s.key}
-              onDragOver={(e) => {
-                if (dragged) e.preventDefault();
-              }}
-              onDrop={() => {
-                if (dragged) {
-                  moveTo(dragged, s.key);
-                  setDragged(null);
-                }
-              }}
-            >
+            <div className="kanban-col" key={s.key}>
               <div className="kcol-head">
                 <div>
                   <b>{s.label}</b>
@@ -200,19 +156,13 @@ export default function OpportunitiesPage() {
                 </div>
                 <span className="kcol-count">{items.length}</span>
               </div>
-              {total > 0 && <div className="kcol-total">{formatAmount(total, "XOF")}</div>}
+              {total > 0 && <div className="kcol-total">{formatAmount(total, currency)}</div>}
               <div className="kcol-body">
                 {items.length === 0 ? (
-                  <div className="kcol-empty">Glissez un prospect ici</div>
+                  <div className="kcol-empty">Aucun prospect à cette étape</div>
                 ) : (
                   items.map((c) => (
-                    <div
-                      className="kanban-card"
-                      key={c.id}
-                      draggable
-                      onDragStart={() => setDragged(c.id)}
-                      onDragEnd={() => setDragged(null)}
-                    >
+                    <div className="kanban-card" key={c.id}>
                       <div className="kcard-head">
                         <span className="contact-avatar">{initialsOf(c.name, c.phone)}</span>
                         <div>
@@ -225,19 +175,13 @@ export default function OpportunitiesPage() {
                           <Flame size={11} /> {c.score ?? "—"}/100
                         </span>
                         {c.potentialValue ? (
-                          <span className="kcard-value">{formatAmount(c.potentialValue, "XOF")}</span>
+                          <span className="kcard-value">{formatAmount(c.potentialValue, currency)}</span>
                         ) : null}
                       </div>
                       <div className="kcard-actions">
-                        <button onClick={() => shift(c.id, -1)} aria-label="Étape précédente">
-                          <ChevronLeft size={14} />
-                        </button>
-                        <Link href="/inbox" aria-label="Voir la conversation">
-                          💬
+                        <Link href="/inbox" aria-label="Voir les conversations">
+                          💬 Voir la boîte de réception
                         </Link>
-                        <button onClick={() => shift(c.id, 1)} aria-label="Étape suivante">
-                          <ChevronRight size={14} />
-                        </button>
                       </div>
                     </div>
                   ))
@@ -248,7 +192,6 @@ export default function OpportunitiesPage() {
         })}
       </div>
 
-      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }

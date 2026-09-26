@@ -103,6 +103,7 @@ function fmtDuration(sec: number) {
 
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
+  const [currency, setCurrency] = useState("XOF");
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -137,6 +138,7 @@ export default function InboxPage() {
       .then(async (r) => {
         if (!r.ok) throw new Error("Chargement impossible");
         const body = await r.json();
+        setCurrency(body.currency || "XOF");
         setConversations(body.conversations ?? []);
       })
       .catch((e: Error) => setError(e.message));
@@ -569,7 +571,7 @@ export default function InboxPage() {
               <div className="info-row">
                 <span>Valeur potentielle</span>
                 <b className="green">
-                  {selected.potential_value ? formatAmount(selected.potential_value, "XOF") : "—"}
+                  {selected.potential_value ? formatAmount(selected.potential_value, currency) : "—"}
                 </b>
               </div>
               <div className="info-row">

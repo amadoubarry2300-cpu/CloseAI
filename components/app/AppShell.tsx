@@ -48,7 +48,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/assistant", label: "Assistant IA", icon: Bot },
       { href: "/products", label: "Produits", icon: ShoppingBag },
-      { href: "/knowledge", label: "Base de connaissances", icon: BookOpen },
+      { href: "/knowledge", label: "Informations utiles", icon: BookOpen },
     ],
   },
   {
@@ -73,7 +73,7 @@ const titles: Record<string, [string, string]> = {
   "/opportunities": ["Opportunités", "Votre pipeline commercial, étape par étape"],
   "/assistant": ["Assistant IA", "Votre copilote de vente au quotidien"],
   "/products": ["Produits & services", "Les offres que votre IA peut présenter"],
-  "/knowledge": ["Base de connaissances", "Les informations fiables utilisées par votre IA"],
+  "/knowledge": ["Informations utiles", "Les informations qui guident les réponses à vos prospects"],
   "/relances": ["Relances", "Ne laissez plus aucune opportunité dormir"],
   "/analytics": ["Analytics", "Mesurez l'impact de vos conversations"],
   "/whatsapp": ["WhatsApp", "État de votre connexion et de vos échanges"],

@@ -57,6 +57,7 @@ function levelOf(score: number): { label: string; cls: string } {
 
 export default function ProspectsPage() {
   const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const [currency, setCurrency] = useState("XOF");
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegKey>("all");
@@ -66,6 +67,7 @@ export default function ProspectsPage() {
       .then(async (r) => {
         if (!r.ok) throw new Error("Chargement impossible");
         const body = await r.json();
+        setCurrency(body.currency || "XOF");
         setContacts(body.contacts ?? []);
       })
       .catch((e: Error) => setError(e.message));
@@ -179,7 +181,7 @@ export default function ProspectsPage() {
               <Banknote size={16} />
             </i>
           </div>
-          <div className="kpi-value">{formatAmount(potential, "XOF")}</div>
+          <div className="kpi-value">{formatAmount(potential, currency)}</div>
           <div className="kpi-foot">
             <span className="kpi-sub">total des opportunités en cours</span>
           </div>
@@ -282,7 +284,7 @@ export default function ProspectsPage() {
                 )}
                 {c.potentialValue ? (
                   <div className="p-value">
-                    <Banknote size={13} /> Valeur potentielle : <b>{formatAmount(c.potentialValue, "XOF")}</b>
+                    <Banknote size={13} /> Valeur potentielle : <b>{formatAmount(c.potentialValue, currency)}</b>
                   </div>
                 ) : null}
                 <div className="hot-foot">
