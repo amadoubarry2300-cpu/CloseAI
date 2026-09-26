@@ -350,6 +350,7 @@ footer{background:#071126;color:white;padding:58px 0 20px}.footer-grid{display:g
 .app-shell .mode-switch .switch { background: #3b82f6; }
 .app-shell .mode-switch.auto { background: rgba(52,211,153,.12); color: #6ee7b7; border-color: rgba(52,211,153,.25); }
 .app-shell .mode-switch.auto .switch { background: #10b981; }
+.app-shell .mode-switch:disabled { cursor: wait; opacity: .72; }
 .app-shell .user-avatar { background: rgba(96,165,250,.14); color: #93c5fd; border: 1px solid rgba(96,165,250,.25); }
 .app-shell .icon-btn { background: transparent; border-color: var(--line); color: #93a3c0; }
 .app-shell .icon-btn:hover { color: #fff; border-color: #3b82f6; }
